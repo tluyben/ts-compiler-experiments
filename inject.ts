@@ -65,6 +65,17 @@ function handleStatement(statement: ts.Statement, newStatements: ts.Statement[])
             newStatements.push(createSenderCall(n, n.name.getText()))
         }
     }
+    if (ts.isExpressionStatement(statement)) {
+        if (ts.isBinaryExpression(statement.expression)) {
+            // here we handle assignments only for now 
+            const n = statement.expression as ts.BinaryExpression
+            if (n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+                if (ts.isIdentifier(n.left)) {
+                    newStatements.push(createSenderCall(n, n.left.getText()))
+                }
+            }
+        }
+    }
 }
 
 function transformer(context: ts.TransformationContext) {
@@ -99,19 +110,18 @@ function transformer(context: ts.TransformationContext) {
                     handleStatement(statement, newStatements)
                 }
 
-
                 node = ts.factory.updateSourceFile(node, [importStatement, ...newStatements]);
 
             } else if (ts.isVariableDeclaration(node)) {
 
-                if (!node.type)
-                    node = ts.factory.updateVariableDeclaration(
-                        node,
-                        node.name,
-                        node.exclamationToken,
-                        ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                        node.initializer
-                    )
+                //if (!node.type)
+                node = ts.factory.updateVariableDeclaration(
+                    node,
+                    node.name,
+                    node.exclamationToken,
+                    node.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                    node.initializer
+                )
 
             } else if (ts.isVariableStatement(node)) {
 
@@ -132,33 +142,12 @@ function transformer(context: ts.TransformationContext) {
                 )
 
             } else if (ts.isMethodDeclaration(node)) {
+                let body: ts.Statement[] = []
 
+                let parameters = node.parameters.map((p) => {
+                    // prepend a new expression to the body of the function for every parameter; 
+                    body.push(createSenderCall(p, p.name.getText()))
 
-                node = ts.factory.updateMethodDeclaration(
-                    node,
-                    node.modifiers,
-                    node.asteriskToken,
-                    node.name,
-                    node.questionToken,
-                    node.typeParameters,
-                    node.parameters.map((p) => {
-                        return ts.factory.createParameterDeclaration(
-                            [],
-                            p.dotDotDotToken,
-                            p.name,
-                            p.questionToken,
-                            p.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                            p.initializer
-                        )
-                    }),
-                    ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                    node.body
-                )
-
-
-            } else if (ts.isFunctionDeclaration(node)) {
-
-                const _parameters = node.parameters.map((p) => {
                     return ts.factory.createParameterDeclaration(
                         [],
                         p.dotDotDotToken,
@@ -169,6 +158,48 @@ function transformer(context: ts.TransformationContext) {
                     )
                 })
 
+                // append the body statemetns
+                if (node.body) {
+                    body.push(...node.body.statements)
+                }
+
+
+                node = ts.factory.updateMethodDeclaration(
+                    node,
+                    node.modifiers,
+                    node.asteriskToken,
+                    node.name,
+                    node.questionToken,
+                    node.typeParameters,
+                    parameters,
+                    node.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                    ts.factory.createBlock(body, true)
+                )
+
+
+            } else if (ts.isFunctionDeclaration(node)) {
+
+                let body: ts.Statement[] = []
+
+                const _parameters = node.parameters.map((p) => {
+                    // prepend a new expression to the body of the function for every parameter; 
+                    body.push(createSenderCall(p, p.name.getText()))
+
+                    return ts.factory.createParameterDeclaration(
+                        [],
+                        p.dotDotDotToken,
+                        p.name,
+                        p.questionToken,
+                        p.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                        p.initializer
+                    )
+                })
+
+                // append the body statemetns
+                if (node.body) {
+                    body.push(...node.body.statements)
+                }
+
                 node = ts.factory.updateFunctionDeclaration(
                     node,
                     [],
@@ -177,29 +208,50 @@ function transformer(context: ts.TransformationContext) {
                     [],
                     _parameters,
                     ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                    node.body
+                    ts.factory.createBlock(body, true)
                 );
 
-            } else if (ts.isArrowFunction(node)) {
 
-                if (!node.type)
-                    node = ts.factory.createArrowFunction(
-                        node.modifiers,
-                        node.typeParameters,
-                        node.parameters.map((p) => {
-                            return ts.factory.createParameterDeclaration(
-                                [],
-                                p.dotDotDotToken,
-                                p.name,
-                                p.questionToken,
-                                ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                                p.initializer
-                            )
-                        }),
+            } else if (ts.isArrowFunction(node)) {
+                let body: ts.Statement[] = []
+
+
+                const parameters = node.parameters.map((p) => {
+                    // prepend a new expression to the body of the function for every parameter; 
+                    body.push(createSenderCall(p, p.name.getText()))
+
+                    return ts.factory.createParameterDeclaration(
+                        [],
+                        p.dotDotDotToken,
+                        p.name,
+                        p.questionToken,
                         ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                        node.equalsGreaterThanToken,
-                        node.body
+                        p.initializer
                     )
+                })
+
+                // we need to change the body here, so this one is  a bit more complicated 
+
+
+                // first check if this is an expression ? 
+                if (ts.isExpression(node.body)) {
+                    // that means we must wrap it in a block with a return 
+                    body.push(ts.factory.createReturnStatement(node.body))
+
+                } else {
+                    // otherwise it's a block, so we can just append the statements 
+                    body.push(...node.body.statements)
+                }
+
+                //if (!node.type)
+                node = ts.factory.createArrowFunction(
+                    node.modifiers,
+                    node.typeParameters,
+                    parameters,
+                    node.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                    node.equalsGreaterThanToken,
+                    ts.factory.createBlock(body, true)
+                )
 
             } else {
                 //console.log(node.kind, node.getText()?.substring(0, 100))

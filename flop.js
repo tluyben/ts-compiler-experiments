@@ -24,4 +24,7 @@ console.log(getMeAlist(10).map((item) => item * 10));
 
 
 
+wp = wp.map((item) => item * 20);
+
+
 console.log(add(1, 2));
