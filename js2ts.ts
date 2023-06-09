@@ -1,13 +1,19 @@
 import { Project, SyntaxKind, TransformTraversalControl, ts } from "ts-morph";
+import fs from "fs";
 
 const project = new Project({
 
     tsConfigFilePath: "./tsconfig.json",
     skipFileDependencyResolution: true,
 
-});
+})
 
-const sourceFile = project.addSourceFileAtPath("./flop.js");
+const file = './flop.js'
+const sourceFile = project.addSourceFileAtPath(file)
+
+sourceFile.forEachDescendant((node, traversal) => {
+    console.log(node.getKindName(), node.getText())
+})
 
 sourceFile.transform((traversal: TransformTraversalControl) => {
     const node = traversal.visitChildren();
@@ -28,7 +34,7 @@ sourceFile.transform((traversal: TransformTraversalControl) => {
             node,
             [],
             node.asteriskToken,
-            traversal.factory.createIdentifier("add"),
+            node.name,
             [],
             _parameters,
             traversal.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
@@ -53,4 +59,31 @@ sourceFile.transform((traversal: TransformTraversalControl) => {
     }
     return node
 })
+
+sourceFile.transform((traversal: TransformTraversalControl) => {
+    const node = traversal.visitChildren();
+
+    if (ts.isArrowFunction(node)) {
+        return traversal.factory.createArrowFunction(
+            node.modifiers,
+            node.typeParameters,
+            node.parameters.map((p) => {
+                return traversal.factory.createParameterDeclaration(
+                    [],
+                    p.dotDotDotToken,
+                    p.name,
+                    p.questionToken,
+                    traversal.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                    p.initializer
+                )
+            }),
+            traversal.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+            node.equalsGreaterThanToken,
+            node.body
+        )
+    }
+    return node
+})
+
 console.log(sourceFile.getText())
+fs.writeFileSync(file.replace('.js', '.ts'), sourceFile.getText())
