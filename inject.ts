@@ -3,7 +3,15 @@ import fs from 'fs';
 
 function createSenderCall(node: ts.Node, name: string): ts.ExpressionStatement {
 
-    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart())
+    let lineInOriginal = -1
+
+    if (name !== '___return') {
+
+        // this returns "Debug Failure. False expression: Node must have a real position for this operation" if it's trying 
+        // to look inside a generated node, like ___return 
+        const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart())
+        lineInOriginal = line
+    }
 
     return ts.factory.createExpressionStatement(
         ts.factory.createCallExpression(
@@ -30,7 +38,7 @@ function createSenderCall(node: ts.Node, name: string): ts.ExpressionStatement {
                                             [
                                                 ts.factory.createPropertyAssignment(
                                                     ts.factory.createIdentifier('line'),
-                                                    ts.factory.createNumericLiteral(String(line + 1))
+                                                    ts.factory.createNumericLiteral(String(lineInOriginal + 1))
                                                 ),
                                                 ts.factory.createPropertyAssignment(
                                                     ts.factory.createIdentifier('name'),
@@ -75,6 +83,54 @@ function handleStatement(statement: ts.Statement, newStatements: ts.Statement[])
                 }
             }
         }
+    }
+    if (ts.isReturnStatement(statement)) {
+        const n = statement as ts.ReturnStatement
+
+        if (n.expression) {
+            if (ts.isIdentifier(n.expression)) {
+                // this one needs to be inserted before the last statement and then the last one follows;
+
+                const last = newStatements.pop()!
+                newStatements.push(createSenderCall(n, n.expression.getText()))
+                newStatements.push(last)
+            } else {
+                // it's an expression 
+                // we need to create a variable declaration and then insert the sender call before the return statement
+                const name = '___return'
+
+                const variableDeclaration = ts.factory.createVariableDeclaration(
+                    name,
+                    undefined,
+                    ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                    n.expression
+                )
+
+                // wrap this in a VariableStatement & List
+                const variableDeclarationList = ts.factory.createVariableDeclarationList(
+                    [variableDeclaration],
+                    ts.NodeFlags.Const
+                )
+
+                const variableStatement = ts.factory.createVariableStatement(
+                    [],
+                    variableDeclarationList
+                )
+
+                // create a new return statement that returns the variable;
+                const newReturnStatement = ts.factory.createReturnStatement(
+                    ts.factory.createIdentifier(name)
+                )
+
+
+                // insert before the return statement 
+                const last = newStatements.pop()!
+                newStatements.push(variableStatement)
+                newStatements.push(createSenderCall(n, name))
+                newStatements.push(newReturnStatement)
+            }
+        }
+
     }
 }
 
