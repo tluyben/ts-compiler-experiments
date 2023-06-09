@@ -111,7 +111,7 @@ function transformer(context: ts.TransformationContext) {
     };
 }
 
-const file = './parser.js'
+const file = './flop.js'
 const sourceFile = ts.createSourceFile(
     file,
     fs.readFileSync(file).toString(),

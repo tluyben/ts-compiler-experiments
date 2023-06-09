@@ -8,12 +8,12 @@ const project = new Project({
 
 })
 
-const file = './parser.js'
+const file = './ff.js'
 const sourceFile = project.addSourceFileAtPath(file)
 
 sourceFile.forEachDescendant((node, traversal) => {
-    if (node.getText().indexOf('initString') >= 0)
-        console.log(node.getKindName(), node.getKind(), node.getText().substring(0, 100))
+    //if (node.getText().indexOf('initString') >= 0)
+    console.log(node.getKindName(), node.getKind(), node.getText().substring(0, 100))
 })
 
 if (false) try {
